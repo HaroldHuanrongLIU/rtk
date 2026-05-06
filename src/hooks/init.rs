@@ -581,7 +581,8 @@ pub fn uninstall(
 
     if pi {
         let plugin_path = pi_plugin_path_for_scope(global)?;
-        let mut removed = Vec::new();
+        let agents_md = pi_agents_md_path_for_scope(global)?;
+        let mut removed: Vec<String> = Vec::new();
 
         if plugin_path.exists() {
             fs::remove_file(&plugin_path).with_context(|| {
@@ -590,16 +591,19 @@ pub fn uninstall(
             if verbose > 0 {
                 eprintln!("Removed Pi extension: {}", plugin_path.display());
             }
-            removed.push(plugin_path);
+            removed.push(format!("Pi extension: {}", plugin_path.display()));
         }
 
-        let agents_md = pi_agents_md_path_for_scope(global)?;
-        remove_pi_awareness(&agents_md, verbose).context("Failed to remove Pi awareness block")?;
+        let awareness_removed = remove_pi_awareness(&agents_md, verbose)
+            .context("Failed to remove Pi awareness block")?;
+        if awareness_removed {
+            removed.push(format!("Pi awareness: {}", agents_md.display()));
+        }
 
         if !removed.is_empty() {
             println!("RTK uninstalled (Pi):");
-            for path in &removed {
-                println!("  - {}", path.display());
+            for item in &removed {
+                println!("  - {}", item);
             }
             println!("\nRestart pi to apply changes.");
         } else {
@@ -1989,17 +1993,17 @@ fn install_pi_awareness(agents_md_path: &Path, verbose: u8) -> Result<()> {
 }
 
 /// Remove the RTK awareness sentinel block from an AGENTS.md file.
-/// If the sentinels are absent this is a no-op.
-fn remove_pi_awareness(agents_md_path: &Path, verbose: u8) -> Result<()> {
+/// Returns true if a block was found and removed, false if absent or file missing.
+fn remove_pi_awareness(agents_md_path: &Path, verbose: u8) -> Result<bool> {
     if !agents_md_path.exists() {
-        return Ok(());
+        return Ok(false);
     }
 
     let existing = fs::read_to_string(agents_md_path)
         .with_context(|| format!("Failed to read {}", agents_md_path.display()))?;
 
     if !PI_SENTINEL_RE.is_match(&existing) {
-        return Ok(());
+        return Ok(false);
     }
 
     let updated = PI_SENTINEL_RE.replace(&existing, "").into_owned();
@@ -2013,7 +2017,7 @@ fn remove_pi_awareness(agents_md_path: &Path, verbose: u8) -> Result<()> {
         );
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// Install the Pi extension and inject the awareness block into AGENTS.md.
@@ -4399,7 +4403,8 @@ mod tests {
             .unwrap()
             .contains(PI_AWARENESS_START));
 
-        remove_pi_awareness(&path, 0).unwrap();
+        let removed = remove_pi_awareness(&path, 0).unwrap();
+        assert!(removed, "must report true when block was present");
         let content = fs::read_to_string(&path).unwrap();
         assert!(
             !content.contains(PI_AWARENESS_START),
@@ -4417,8 +4422,8 @@ mod tests {
         let path = tmp.path().join(AGENTS_MD);
         fs::write(&path, "# No rtk block here\n").unwrap();
 
-        remove_pi_awareness(&path, 0).unwrap();
-
+        let removed = remove_pi_awareness(&path, 0).unwrap();
+        assert!(!removed, "must report false when no block present");
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "# No rtk block here\n", "file must be unchanged");
     }
@@ -4427,7 +4432,8 @@ mod tests {
     fn test_remove_pi_awareness_noop_when_file_missing() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join(AGENTS_MD);
-        remove_pi_awareness(&path, 0).unwrap();
+        let removed = remove_pi_awareness(&path, 0).unwrap();
+        assert!(!removed, "must report false when file missing");
     }
 
     #[test]

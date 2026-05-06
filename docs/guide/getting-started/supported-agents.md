@@ -35,6 +35,7 @@ Agent runs "cargo test"
 | Gemini CLI | Rust binary (`BeforeTool`) | Yes |
 | OpenCode | TypeScript plugin (`tool.execute.before`) | Yes |
 | OpenClaw | TypeScript plugin (`before_tool_call`) | Yes |
+| Pi | TypeScript extension (`tool_call` event) | Yes |
 | Cline / Roo Code | Rules file (prompt-level) | N/A |
 | Windsurf | Rules file (prompt-level) | N/A |
 | Codex CLI | AGENTS.md instructions | N/A |
@@ -83,6 +84,29 @@ rtk init --global --opencode
 ```
 
 Creates `~/.config/opencode/plugins/rtk.ts`. Uses the `tool.execute.before` hook.
+
+### Pi
+
+```bash
+# Project-local (default)
+rtk init --pi
+
+# Global — all projects
+rtk init --pi --global
+
+# Pi only (no Claude/OpenCode install)
+rtk init --agent pi
+rtk init --agent pi --global
+```
+
+Creates `.pi/extensions/rtk.ts` (local) or `~/.pi/agent/extensions/rtk.ts` (global) and appends an RTK awareness block to `AGENTS.md`. Pi auto-discovers extensions from both paths on startup.
+
+Uninstall:
+
+```bash
+rtk init --uninstall --pi
+rtk init --uninstall --pi --global
+```
 
 ### OpenClaw
 
@@ -140,7 +164,7 @@ Support is blocked on upstream `BeforeToolCallback` ([mistral-vibe#531](https://
 | **Plugin** | TypeScript/JS in agent's plugin system | Transparent — in-place mutation |
 | **Rules file** | Prompt-level instructions | Guidance only — agent is told to prefer `rtk <cmd>` |
 
-Rules file integrations (Cline, Windsurf, Codex, Kilo Code, Antigravity) rely on the model following instructions. Full hook integrations (Claude Code, Cursor, Gemini) are guaranteed — the command is rewritten before the agent sees it.
+Rules file integrations (Cline, Windsurf, Codex, Kilo Code, Antigravity) rely on the model following instructions. Full hook integrations (Claude Code, Cursor, Gemini) are guaranteed — the command is rewritten before the agent sees it. Plugin integrations (OpenCode, Pi) use in-place mutation via the agent's TypeScript extension API.
 
 ## Windows support
 
