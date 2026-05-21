@@ -1,39 +1,46 @@
 [INFO] Scanning for projects...
 [INFO]
-[INFO] -----------------------< com.example:myapp >------------------------
-[INFO] Building myapp 1.0.0
+[INFO] ----------------------< commons-cli:commons-cli >-----------------------
+[INFO] Building Apache Commons CLI 1.11.1-SNAPSHOT
 [INFO]   from pom.xml
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
-[INFO] --- surefire:2.22.2:test (default-test) @ myapp ---
+[INFO] --- surefire:3.5.5:test (default-test) @ commons-cli ---
 [INFO]
 [INFO] -------------------------------------------------------
 [INFO]  T E S T S
 [INFO] -------------------------------------------------------
-[INFO] Running com.example.app.FooServiceTest
-org.opentest4j.AssertionFailedError: expected: <3> but was: <2>
-	at com.example.app.FooServiceTest.shouldCountThree(FooServiceTest.java:42)
-	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
-	at java.lang.reflect.Method.invoke(Method.java:498)
-	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:688)
-	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
-	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:84)
-	at java.util.ArrayList.forEach(ArrayList.java:1259)
-	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:418)
-[ERROR] Tests run: 6, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2.341 s <<< FAILURE! - in com.example.app.FooServiceTest
-[INFO] Running com.example.app.BarServiceTest
-[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s - in com.example.app.BarServiceTest
+[INFO] Running org.apache.commons.cli.SolrCliTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in org.apache.commons.cli.SolrCliTest
+[INFO] Running org.apache.commons.cli.RtkInducedFailTest
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.033 s <<< FAILURE! -- in org.apache.commons.cli.RtkInducedFailTest
+[ERROR] org.apache.commons.cli.RtkInducedFailTest.rtkInducedFailure -- Time elapsed: 0.025 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <expected> but was: <actual>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:177)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1145)
+	at org.apache.commons.cli.RtkInducedFailTest.rtkInducedFailure(RtkInducedFailTest.java:25)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[INFO] Running org.apache.commons.cli.PatternOptionBuilderTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.066 s -- in org.apache.commons.cli.PatternOptionBuilderTest
 [INFO]
 [INFO] Results:
 [INFO]
 [ERROR] Failures:
-[ERROR]   FooServiceTest.shouldCountThree:42 expected: <3> but was: <2>
-[ERROR] Tests run: 10, Failures: 1, Errors: 0, Skipped: 0
+[ERROR]   RtkInducedFailTest.rtkInducedFailure:25 expected: <expected> but was: <actual>
+[INFO]
+[ERROR] Tests run: 978, Failures: 1, Errors: 0, Skipped: 61
 [INFO]
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD FAILURE
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  3.124 s
-[INFO] Finished at: 2026-01-15T10:30:00Z
+[INFO] Total time:  01:05 min
+[INFO] Finished at: 2026-05-21T14:57:09Z
 [INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.5:test (default-test) on project commons-cli: There are test failures.

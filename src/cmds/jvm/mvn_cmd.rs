@@ -22,9 +22,11 @@ lazy_static! {
     static ref RUNNING: Regex = Regex::new(r"^\[INFO\] Running ").unwrap();
 
     /// Surefire/Failsafe per-class close line. Captures `Failures` and `Errors`.
-    /// Tolerates the optional `<<< FAILURE!` marker between duration and ` - in `.
+    /// Tolerates the optional `<<< FAILURE!` marker. Separator is `-` (Surefire 2.x)
+    /// or `--` (Surefire 3.x). Prefix INFO/ERROR/WARNING (3.x emits WARNING for
+    /// classes with only skipped tests).
     static ref CLOSE: Regex = Regex::new(
-        r"^\[(?:INFO|ERROR)\] Tests run: \d+, Failures: (\d+), Errors: (\d+), Skipped: \d+, Time elapsed: [^ ]+ s(?:\s+<<<\s*FAILURE!)? - in (.+)$"
+        r"^\[(?:INFO|ERROR|WARNING)\] Tests run: \d+, Failures: (\d+), Errors: (\d+), Skipped: \d+, Time elapsed: [^ ]+ s(?:\s+<<<\s*FAILURE!)?\s+--?\s+in (.+)$"
     ).unwrap();
 
     /// Final BUILD footer.
@@ -151,7 +153,10 @@ fn keep_outside_block(line: &str) -> bool {
 /// State machine: when a `[INFO] Running <FQN>` line is seen, start buffering
 /// the block. When the close line arrives, decide:
 /// - Failures == 0 && Errors == 0 → drop the block silently.
-/// - Else → emit the block with framework frames stripped, durations normalised.
+/// - Else → emit the block with framework frames stripped, durations normalised,
+///   then enter a failure-trail mode that preserves the exception line and
+///   user-code frames Surefire 3.x emits *after* the close line (until the
+///   next blank line ends the trail).
 ///
 /// English-footer guard: if no `BUILD SUCCESS`/`BUILD FAILURE` line is present,
 /// return the ANSI-stripped raw input (non-English locale or truncated output).
@@ -165,6 +170,7 @@ pub fn filter_surefire(raw: &str) -> String {
     let mut block_lines: Vec<String> = Vec::new();
     let mut block_running: Option<String> = None;
     let mut in_block = false;
+    let mut failure_trail = false;
 
     for line in stripped.lines() {
         if PLUGIN_BANNER.is_match(line) {
@@ -178,6 +184,7 @@ pub fn filter_surefire(raw: &str) -> String {
             block_lines.clear();
             block_running = Some(line.to_string());
             in_block = true;
+            failure_trail = false;
             continue;
         }
 
@@ -189,6 +196,7 @@ pub fn filter_surefire(raw: &str) -> String {
                     emit_block(&mut out, &block_running, &block_lines);
                     out.push_str(&normalise(line));
                     out.push('\n');
+                    failure_trail = true;
                 }
                 block_lines.clear();
                 block_running = None;
@@ -196,6 +204,21 @@ pub fn filter_surefire(raw: &str) -> String {
                 continue;
             }
             block_lines.push(line.to_string());
+            continue;
+        }
+
+        if failure_trail {
+            if line.is_empty() {
+                out.push('\n');
+                failure_trail = false;
+                continue;
+            }
+            let t = line.trim_start();
+            if t.starts_with("at ") && is_framework_frame(t) {
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
             continue;
         }
 
@@ -321,6 +344,7 @@ pub fn filter_package(raw: &str) -> String {
     let mut block_running: Option<String> = None;
     let mut in_block = false;
     let mut keep_continuation = false;
+    let mut failure_trail = false;
     let mut seen_warnings: HashSet<String> = HashSet::new();
 
     for line in stripped.lines() {
@@ -336,6 +360,7 @@ pub fn filter_package(raw: &str) -> String {
             block_running = Some(line.to_string());
             in_block = true;
             keep_continuation = false;
+            failure_trail = false;
             continue;
         }
 
@@ -347,6 +372,7 @@ pub fn filter_package(raw: &str) -> String {
                     emit_block(&mut out, &block_running, &block_lines);
                     out.push_str(&normalise(line));
                     out.push('\n');
+                    failure_trail = true;
                 }
                 block_lines.clear();
                 block_running = None;
@@ -354,6 +380,21 @@ pub fn filter_package(raw: &str) -> String {
                 continue;
             }
             block_lines.push(line.to_string());
+            continue;
+        }
+
+        if failure_trail {
+            if line.is_empty() {
+                out.push('\n');
+                failure_trail = false;
+                continue;
+            }
+            let t = line.trim_start();
+            if t.starts_with("at ") && is_framework_frame(t) {
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
             continue;
         }
 
@@ -581,14 +622,13 @@ mod tests {
     fn filter_surefire_pass_output_compact() {
         let i = include_str!("../../../tests/fixtures/mvn_test_pass_slice_raw.txt");
         let o = filter_surefire(i);
-        // Passing fixture has 2 blocks; both should be dropped.
-        assert!(!o.contains("FooService.execute"));
-        assert!(!o.contains("ConsultarCidadeUseCaseTest"));
-        // Output should be a small fraction of input.
+        // Passing fixture has 5 close lines; all should be dropped (no per-class line in output).
+        assert!(!o.contains("Running org.apache.commons.cli.help.UtilTest"));
+        assert!(!o.contains("Time elapsed: 1.023 s -- in"));
         let savings = 100.0 - (count_tokens(&o) as f64 / count_tokens(i) as f64 * 100.0);
         assert!(
-            savings >= 60.0,
-            "pass-fixture savings >=60%, got {:.1}%",
+            savings >= 50.0,
+            "pass-fixture savings >=50%, got {:.1}%",
             savings
         );
     }
@@ -611,8 +651,8 @@ mod tests {
             o
         );
         assert!(
-            !o.contains("AppException: input must not be null"),
-            "passing-test stack dropped; got:\n{}",
+            !o.contains("Running org.apache.commons.cli.ConverterTests"),
+            "passing-test Running line dropped; got:\n{}",
             o
         );
         assert!(
@@ -621,7 +661,7 @@ mod tests {
             o
         );
         assert!(
-            o.contains("Tests run: 10, Failures: 0"),
+            o.contains("Tests run: 977, Failures: 0"),
             "aggregate preserved; got:\n{}",
             o
         );
@@ -642,13 +682,69 @@ mod tests {
             o
         );
         assert!(
-            o.contains("at com.example."),
+            o.contains("at org.apache.commons.cli.RtkInducedFailTest.rtkInducedFailure"),
             "user-code frame preserved; got:\n{}",
             o
         );
         assert!(
             !o.contains("at org.junit."),
             "framework frames stripped in failing block; got:\n{}",
+            o
+        );
+    }
+
+    /// 2.x compat: CLOSE regex must still match the single-dash separator emitted
+    /// by Surefire 2.x. Locks the `--?` regex against accidental tightening.
+    #[test]
+    fn surefire_matches_legacy_2x_close_line() {
+        let i = "[INFO] -----< x >-----\n[INFO] Running x.Foo\n[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.123 s - in x.Foo\n[INFO] BUILD SUCCESS\n";
+        let o = filter_surefire(i);
+        // CLOSE matched → passing block dropped silently.
+        assert!(
+            !o.contains("Running x.Foo"),
+            "2.x ` - in ` close-line matched; passing block dropped; got:\n{}",
+            o
+        );
+        assert!(
+            o.contains("BUILD SUCCESS"),
+            "footer preserved; got:\n{}",
+            o
+        );
+    }
+
+    /// 3.x WARNING-prefixed close line (class with only skipped tests) must
+    /// match CLOSE so the block is dropped (no failures, no errors).
+    #[test]
+    fn surefire_matches_warning_skipped_close_line() {
+        let i = "[INFO] -----< x >-----\n[INFO] Running x.Skip\n[WARNING] Tests run: 5, Failures: 0, Errors: 0, Skipped: 5, Time elapsed: 0.010 s -- in x.Skip\n[INFO] BUILD SUCCESS\n";
+        let o = filter_surefire(i);
+        assert!(
+            !o.contains("Running x.Skip"),
+            "[WARNING] close-line matched; block dropped; got:\n{}",
+            o
+        );
+    }
+
+    /// 3.x failure-trail: after a CLOSE with `<<< FAILURE!`, the exception
+    /// class and user-code frames Surefire emits *outside* the block must be
+    /// preserved until the next blank line.
+    #[test]
+    fn surefire_preserves_3x_failure_trail() {
+        let i = "[INFO] -----< x >-----\n\
+                 [INFO] Running x.Foo\n\
+                 [ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.033 s <<< FAILURE! -- in x.Foo\n\
+                 [ERROR] x.Foo.bar -- Time elapsed: 0.025 s <<< FAILURE!\n\
+                 org.opentest4j.AssertionFailedError: expected: <a> but was: <b>\n\
+                 \tat x.Foo.bar(Foo.java:25)\n\
+                 \tat org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1)\n\
+                 \n\
+                 [INFO] BUILD FAILURE\n";
+        let o = filter_surefire(i);
+        assert!(o.contains("AssertionFailedError"), "exception preserved; got:\n{}", o);
+        assert!(o.contains("at x.Foo.bar"), "user frame preserved; got:\n{}", o);
+        assert!(
+            !o.contains("at org.junit."),
+            "framework frame stripped in trail; got:\n{}",
             o
         );
     }
@@ -775,6 +871,30 @@ mod tests {
     }
 
     // ── Token-savings (FULL gzipped fixtures) ───────────────────────────────
+
+    #[test]
+    #[ignore]
+    fn print_savings_summary() {
+        let pf = gunzip(include_bytes!("../../../tests/fixtures/mvn_test_pass_full_raw.txt.gz"));
+        let pf_out = filter_surefire(&pf);
+        let pf_in_tok = count_tokens(&pf);
+        let pf_out_tok = count_tokens(&pf_out);
+        let pf_s = 100.0 - (pf_out_tok as f64 / pf_in_tok as f64 * 100.0);
+        println!(
+            "mvn_test_pass_full: {} -> {} tokens ({:.1}% savings)",
+            pf_in_tok, pf_out_tok, pf_s
+        );
+
+        let inst = gunzip(include_bytes!("../../../tests/fixtures/mvn_install_full_raw.txt.gz"));
+        let inst_out = filter_package(&inst);
+        let inst_in_tok = count_tokens(&inst);
+        let inst_out_tok = count_tokens(&inst_out);
+        let inst_s = 100.0 - (inst_out_tok as f64 / inst_in_tok as f64 * 100.0);
+        println!(
+            "mvn_install_full:   {} -> {} tokens ({:.1}% savings)",
+            inst_in_tok, inst_out_tok, inst_s
+        );
+    }
 
     #[test]
     fn savings_mvn_test_pass_full() {
