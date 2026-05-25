@@ -66,11 +66,13 @@ rtk init --global --cursor
 
 Restart Cursor. The hook uses `preToolUse` with Cursor's `updated_input` format.
 
-### VS Code Copilot Chat
+### GitHub Copilot (VS Code Chat + CLI)
 
 ```bash
-rtk init --global --copilot
+rtk init --copilot
 ```
+
+Writes one `.github/hooks/rtk-rewrite.json` serving both hosts: VS Code Copilot Chat reads its `PreToolUse` entry (transparent rewrite), GitHub Copilot CLI reads its `preToolUse` entry (deny-with-suggestion; the agent retries with `rtk`).
 
 ### Gemini CLI
 

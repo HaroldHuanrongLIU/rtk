@@ -42,7 +42,9 @@ enum HookFormat {
 pub fn run_copilot() -> Result<()> {
     let input = read_stdin_limited()?;
 
-    let input = input.trim();
+    // Strip leading BOM(s) before trimming: some Windows hosts prepend UTF-8
+    // BOMs to hook stdin (confirmed for Cursor), which serde_json rejects.
+    let input = strip_leading_bom(&input).trim();
     if input.is_empty() {
         return Ok(());
     }
@@ -573,6 +575,25 @@ mod tests {
     fn test_detect_non_bash_is_passthrough() {
         let v = json!({ "tool_name": "editFiles" });
         assert!(matches!(detect_format(&v), HookFormat::PassThrough));
+    }
+
+    #[test]
+    fn test_copilot_bom_prefixed_payload_is_recognized() {
+        // Windows hosts may prepend one or two UTF-8 BOMs to hook stdin
+        // (confirmed for Cursor). run_copilot strips them before parsing;
+        // verify both Copilot formats still parse after the same handling.
+        for raw in [
+            format!("\u{feff}{}", copilot_cli_input("git status")),
+            format!("\u{feff}\u{feff}{}", copilot_cli_input("git status")),
+        ] {
+            let cleaned = strip_leading_bom(&raw).trim();
+            let v: Value = serde_json::from_str(cleaned).expect("BOM-stripped JSON must parse");
+            assert!(matches!(detect_format(&v), HookFormat::CopilotCli { .. }));
+        }
+
+        let raw = format!("\u{feff}{}", vscode_input("Bash", "git status"));
+        let v: Value = serde_json::from_str(strip_leading_bom(&raw).trim()).unwrap();
+        assert!(matches!(detect_format(&v), HookFormat::VsCode { .. }));
     }
 
     #[test]

@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
 use crate::hooks::constants::{
-    CONFIG_DIR, CURSOR_DIR, GEMINI_DIR, OPENCODE_PLUGIN_FILE, OPENCODE_SUBDIR, PLUGIN_SUBDIR,
+    CONFIG_DIR, COPILOT_HOOK_FILE, COPILOT_INSTRUCTIONS_FILE, CURSOR_DIR, GEMINI_DIR, GITHUB_DIR,
+    OPENCODE_PLUGIN_FILE, OPENCODE_SUBDIR, PLUGIN_SUBDIR,
 };
 
 use super::constants::{
@@ -3845,7 +3846,9 @@ fn uninstall_gemini(ctx: InitContext) -> Result<Vec<String>> {
 
 // ── Copilot integration ─────────────────────────────────────
 
+// PreToolUse = VS Code schema, preToolUse = Copilot CLI schema (same file, both hosts).
 const COPILOT_HOOK_JSON: &str = r#"{
+  "version": 1,
   "hooks": {
     "PreToolUse": [
       {
@@ -3853,6 +3856,15 @@ const COPILOT_HOOK_JSON: &str = r#"{
         "command": "rtk hook copilot",
         "cwd": ".",
         "timeout": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "rtk hook copilot",
+        "powershell": "rtk hook copilot",
+        "cwd": ".",
+        "timeoutSec": 5
       }
     ]
   }
@@ -3901,8 +3913,8 @@ pub fn run_copilot(ctx: InitContext) -> Result<()> {
 /// `cargo test`'s default parallel execution).
 fn run_copilot_at(base: &Path, ctx: InitContext) -> Result<()> {
     let InitContext { dry_run, .. } = ctx;
-    let github_dir = base.join(".github");
-    let hooks_dir = github_dir.join("hooks");
+    let github_dir = base.join(GITHUB_DIR);
+    let hooks_dir = github_dir.join(HOOKS_SUBDIR);
 
     if !dry_run {
         fs::create_dir_all(&hooks_dir)
@@ -3912,7 +3924,7 @@ fn run_copilot_at(base: &Path, ctx: InitContext) -> Result<()> {
     // 1. Upsert RTK marker block in copilot-instructions.md (preserves user content).
     //    Done BEFORE writing the hook config so a malformed file aborts the install
     //    without leaving a stale hook on disk.
-    let instructions_path = github_dir.join("copilot-instructions.md");
+    let instructions_path = github_dir.join(COPILOT_INSTRUCTIONS_FILE);
     write_rtk_block(
         &instructions_path,
         COPILOT_INSTRUCTIONS,
@@ -3922,7 +3934,7 @@ fn run_copilot_at(base: &Path, ctx: InitContext) -> Result<()> {
     )?;
 
     // 2. Write hook config (only reached if the upsert above succeeded).
-    let hook_path = hooks_dir.join("rtk-rewrite.json");
+    let hook_path = hooks_dir.join(COPILOT_HOOK_FILE);
     write_if_changed(&hook_path, COPILOT_HOOK_JSON, "Copilot hook config", ctx)?;
 
     if dry_run {
@@ -6252,6 +6264,42 @@ mod tests {
         assert!(content.contains(RTK_BLOCK_START));
         assert!(content.contains(RTK_BLOCK_END));
         assert!(content.contains("rtk cargo test"));
+    }
+
+    #[test]
+    fn test_copilot_hook_json_serves_both_vscode_and_cli_schemas() {
+        let v: serde_json::Value = serde_json::from_str(COPILOT_HOOK_JSON).unwrap();
+
+        let vscode = &v["hooks"]["PreToolUse"][0];
+        assert_eq!(vscode["command"], "rtk hook copilot");
+        assert!(vscode["timeout"].is_number(), "VS Code uses `timeout`");
+
+        assert_eq!(v["version"], 1, "Copilot CLI requires top-level version");
+        let cli = &v["hooks"]["preToolUse"][0];
+        assert_eq!(cli["bash"], "rtk hook copilot");
+        assert_eq!(cli["powershell"], "rtk hook copilot");
+        assert!(
+            cli["timeoutSec"].is_number(),
+            "Copilot CLI uses `timeoutSec`"
+        );
+    }
+
+    #[test]
+    fn test_copilot_init_writes_dual_schema_to_disk() {
+        let temp = TempDir::new().unwrap();
+        run_copilot_at(temp.path(), InitContext::default()).unwrap();
+
+        let hook_path = temp
+            .path()
+            .join(".github")
+            .join("hooks")
+            .join("rtk-rewrite.json");
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&hook_path).unwrap()).unwrap();
+
+        assert_eq!(v["hooks"]["PreToolUse"][0]["command"], "rtk hook copilot");
+        assert_eq!(v["version"], 1);
+        assert_eq!(v["hooks"]["preToolUse"][0]["bash"], "rtk hook copilot");
     }
 
     #[test]
