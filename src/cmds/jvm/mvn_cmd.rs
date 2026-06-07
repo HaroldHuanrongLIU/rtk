@@ -448,7 +448,7 @@ impl<'a> SurefireBlock<'a> {
 /// The aggregate `[ERROR] Tests run:` line is matched by `AGG` and kept; the
 /// `[ERROR]   ` entries are kept by the catch-all `[ERROR]` keeper. On builds
 /// with hundreds of failures this can be quite large. Cap entries at
-/// [`MAX_MVN_FAILING_CLASSES`] and emit `\n... +N more failures\n` immediately
+/// [`MAX_MVN_FAILING_CLASSES`] and emit `\n… +N more failures\n` immediately
 /// before the `Tests run:` aggregate when entries were dropped.
 struct FailuresSummaryCap {
     cap: usize,
@@ -495,7 +495,7 @@ impl FailuresSummaryCap {
         }
     }
 
-    /// Pre-emit the `... +N more failures` tail when the aggregate
+    /// Pre-emit the `… +N more failures` tail when the aggregate
     /// `[ERROR] Tests run:` line is about to be written, then close the
     /// summary. Caller writes the AGG line itself afterwards.
     fn handle_aggregate(&mut self, line: &str, out: &mut String) {
@@ -503,7 +503,7 @@ impl FailuresSummaryCap {
             return;
         }
         if self.dropped > 0 {
-            out.push_str(&format!("\n... +{} more failures\n", self.dropped));
+            out.push_str(&format!("\n… +{} more failures\n", self.dropped));
         }
         self.in_summary = false;
         self.emitted = 0;
@@ -515,7 +515,7 @@ impl FailuresSummaryCap {
     /// the resulting filtered output is still well-formed.
     fn finish(&mut self, out: &mut String) {
         if self.in_summary && self.dropped > 0 {
-            out.push_str(&format!("\n... +{} more failures\n", self.dropped));
+            out.push_str(&format!("\n… +{} more failures\n", self.dropped));
         }
     }
 }
@@ -607,7 +607,7 @@ fn filter_surefire_with_cap(raw: &str, cap: usize) -> String {
     summary.finish(&mut out);
     if dropped_failing > 0 {
         out.push_str(&format!(
-            "\n... +{} more failing test classes\n",
+            "\n… +{} more failing test classes\n",
             dropped_failing
         ));
     }
@@ -774,7 +774,7 @@ fn filter_package_with_cap(raw: &str, cap: usize) -> String {
     summary.finish(&mut out);
     if dropped_failing > 0 {
         out.push_str(&format!(
-            "\n... +{} more failing test classes\n",
+            "\n… +{} more failing test classes\n",
             dropped_failing
         ));
     }
@@ -1313,7 +1313,7 @@ mod tests {
             o
         );
         assert!(
-            o.contains("... +1 more failing test classes"),
+            o.contains("… +1 more failing test classes"),
             "tail counts one class, not one per failure; got:\n{}",
             o
         );
@@ -1618,7 +1618,7 @@ mod tests {
 
     /// Synthetic fixture with 5 failing classes; with `cap = 3` we expect
     /// the first 3 failing blocks emitted in full and a
-    /// `... +2 more failing test classes` tail.
+    /// `… +2 more failing test classes` tail.
     #[test]
     fn surefire_caps_failing_blocks_emits_tail() {
         let mut i = String::from(
@@ -1671,7 +1671,7 @@ mod tests {
             );
         }
         assert!(
-            o.contains("... +2 more failing test classes"),
+            o.contains("… +2 more failing test classes"),
             "tail emitted; got:\n{}",
             o
         );
@@ -1711,7 +1711,7 @@ mod tests {
     }
 
     /// `[ERROR] Failures:` summary block cap: with N>cap entries, expect the
-    /// first `cap` entries plus a `\n... +(N-cap) more failures\n` tail
+    /// first `cap` entries plus a `\n… +(N-cap) more failures\n` tail
     /// emitted before the aggregate `[ERROR] Tests run:` line.
     #[test]
     fn failures_summary_block_is_capped() {
@@ -1754,7 +1754,7 @@ mod tests {
         }
         // Tail emitted before aggregate.
         let tail_idx = o
-            .find("... +2 more failures")
+            .find("… +2 more failures")
             .unwrap_or_else(|| panic!("tail must appear; got:\n{}", o));
         let agg_idx = o
             .find("[ERROR] Tests run: 100")
