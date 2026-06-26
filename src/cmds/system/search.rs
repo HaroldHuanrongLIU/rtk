@@ -326,7 +326,7 @@ fn passthrough<T: AsRef<str>>(
 
     print!("{}", strip_ansi(&result.stdout));
     if !result.stderr.is_empty() {
-        eprint!("{}", result.stderr.trim());
+        eprint!("{}", result.stderr);
     }
 
     timer.track_passthrough(real_cmd, &format!("rtk {} (passthrough)", real_cmd));
@@ -399,26 +399,19 @@ pub fn run(
     let exit_code = result.exit_code;
     let raw_output = result.stdout.clone();
 
-    if result.stdout.trim().is_empty() {
-        if is_grep_error_exit(exit_code) {
-            if !result.stderr.trim().is_empty() {
-                eprintln!("{}", result.stderr.trim());
-            }
-            let msg = format!("search failed with exit code {}", exit_code);
-            timer.track(&real_cmd, &rtk_label, &raw_output, &msg);
-            eprintln!("{}", msg);
-            return Ok(exit_code);
-        }
-        // grep/rg print nothing on a clean no-match; a "0 matches" line would
-        // exceed the real command's output, so emit nothing (never-worse).
-        timer.track(&real_cmd, &rtk_label, &raw_output, "");
-        return Ok(exit_code);
+    // Unparseable shape re-runs verbatim below (with its own stderr), so handle it
+    // before surfacing this run's stderr (#2333).
+    if unparsed_signal(&raw_output) > 0 {
+        return passthrough(&timer, engine, &args, &real_cmd);
     }
 
-    // Safety net: unparseable shape → passthrough verbatim, never silently drop (#2333).
-    let signal = unparsed_signal(&raw_output);
-    if signal > 0 {
-        return passthrough(&timer, engine, &args, &real_cmd);
+    if !result.stderr.is_empty() {
+        eprint!("{}", result.stderr);
+    }
+
+    if result.stdout.trim().is_empty() {
+        timer.track(&real_cmd, &rtk_label, &raw_output, "");
+        return Ok(exit_code);
     }
 
     let context_re = if context_only {
@@ -697,28 +690,9 @@ fn compact_path(path: &str) -> String {
     )
 }
 
-/// grep/rg convention: exit 1 = no match found (normal), exit >= 2 = real
-/// error (bad regex, tool crash, missing binary). An error must surface to the
-/// user, never be silently reported as a false "0 matches".
-fn is_grep_error_exit(exit_code: i32) -> bool {
-    exit_code >= 2
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_grep_error_exit() {
-        // exit 0 = matches, exit 1 = no match: both normal, not errors.
-        assert!(!is_grep_error_exit(0));
-        assert!(!is_grep_error_exit(1));
-        // exit >= 2 = real error (bad regex, tool crash, missing binary).
-        // Must surface, never become a false "0 matches".
-        assert!(is_grep_error_exit(2));
-        assert!(is_grep_error_exit(3));
-        assert!(is_grep_error_exit(127));
-    }
 
     #[test]
     fn test_clean_line() {
